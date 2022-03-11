@@ -1,0 +1,143 @@
+# Reduced Properties#
+def gas_pseudo_critical_reduced_properties(temp, pressure, sg, x_h2s, x_co2):
+# This is for calculating pseudo reduced pressures & temperatures #
+# Pseudo Crititcal properties Using Standings & Sutton #
+# For range: 0.57 < sg < 1.68 for both (Sutton, 1985) & (Standings,1977), Standings is used when x_h2s & x_co2 <0.02#
+ # For pseudo reduced properties  For range: x_h2s (mol%) < 0.738; x_co2 (mol%) < 0.544; 154 < p (psia) < 7026; 40 < temp (°F) < 300 (error 0.97%)
+    #(Wichert and Aziz, 1972)#  
+
+  pressure=pressure+14.223
+  import numpy as np
+
+  if sg > 0.57 and sg < 1.68  and x_h2s < 0.738 and x_co2 <0.544 and pressure > 154 and pressure < 7026 and temp > 40 and temp < 300:
+    
+    temp = temp + 459.67 # convert to Rankine
+    if x_h2s < 0.02 and x_co2 <0.02:
+        #Pseudo Critical properties Using Standings(1977)#
+        P_pc = 677 - (15 * sg) - (37.5 * sg**2)
+        T_pc = 168 + (325 * sg) - (12.5 * sg**2) #in Rankine
+    else:
+        # calculate pseudocritical properties (Sutton, valid for 0.57<sg<1.68)
+        P_pc = 756.8 - (131.07 * sg) - (3.6 * sg**2)
+        T_pc = 169.2 + (349.50 * sg) - (74 * sg**2) # in Rankine
+
+    # calculate adjustment to pseudocritical properties for sour gas (Wiechert-Aziz, valid for x_co2<0.544 and x_h2s<0.738)
+    e = (120 * (((x_h2s + x_co2)**0.9) - ((x_h2s + x_co2)**1.6))) + (15 * (x_h2s**0.5 - x_h2s**4))
+    T_pc_1 = T_pc - e # corrected T_pc
+    P_pc = (P_pc * T_pc_1) / (T_pc +( x_h2s * e * (1-x_h2s)))
+
+    # calculate pseudoreduced properties
+    P_pr = pressure / P_pc
+    T_pr = temp / T_pc_1
+  
+  else:
+    P_pc, T_pc, P_pr, T_pr = np.nan, np.nan, np.nan, np.nan
+
+  return(P_pc, T_pc_1, P_pr, T_pr)
+
+# Gas Z#
+def gas_zfactor(T_pr, P_pr):
+  """
+  Calculate Gas Compressibility Factor
+  For range: 0.2 < P_pr < 30; 1 < T_pr < 3 (error 0.486%)
+  (Dranchuk and Aboukassem, 1975)
+  """
+  # T_pr : calculated pseudoreduced temperature
+  # P_pr : calculated pseudoreduced pressure   
+  from scipy.optimize import fsolve # non-linear solver
+  import numpy as np
+
+  if T_pr > 1 and T_pr < 3 and P_pr > 0.2 and P_pr < 30:
+    a1 = 0.3265; a2 = -1.0700; a3 = -0.5339; a4 = 0.01569; a5 = -0.05165; a6 = 0.5475
+    a7 = -0.7361; a8 = 0.1844; a9 = 0.1056; a10 = 0.6134; a11 = 0.7210
+
+    def f(y):
+      rho_pr, z = y
+      c1 = a1 + (a2/T_pr) + (a3/(T_pr**3))+ (a4/(T_pr**4))+ (a5/(T_pr**5))
+      c2 = a6 + (a7/T_pr) + (a8/(T_pr**2))
+      c3 = a9*((a7/T_pr) + (a8/(T_pr**2)))
+      c4 = (a10)*(1+(a11*(rho_pr**2)))*((rho_pr**2)/(T_pr**3))*(np.exp(-a11*(rho_pr**2)))
+
+      f1 = z + (c3*(rho_pr**5)) - (c2*(rho_pr**2)) - (c1*(rho_pr**1)) - c4 - 1
+      f2 = rho_pr - ((0.27 * P_pr) / (z * T_pr))
+      return[f1, f2]
+
+    pseudo_rho, z_factor = fsolve(f, [1, 1]) # initial guess
+  
+  else:
+    pseudo_rho, z_factor = np.nan, np.nan
+
+  return(pseudo_rho, z_factor) # result is density, z-factor
+
+#isothermal compressibility#
+def gas_isothermal_compressibility(T_pr, P_pr, rho_pr, z, P_pc):
+  # isithermal gas compressibility using TRube & Matter Brar,Aziz (1975) equation#
+#rho_pr is pseudo reduced density#
+# function gives compressibility in psi-1#
+  import numpy as np
+​
+  a1 = 0.31506; a2 = -1.0467099; a3 = -0.57832720; a4 = 0.53530771; a5 = -0.61232032; a6 = -1.0488813
+  a7 = 0.68157001; a8 = 0.68446549
+​
+  do = ((a1 + (a2/T_pr) + (a3/T_pr**3)) +((a4 + (a5/T_pr)) * 2*rho_pr) + \
+      (5 * ((a5*a6/T_pr)*(rho_pr**4))) + 
+       ((2 * a10 * rho_pr / (T_pr**3))*(np.exp(-a8 * rho_pr**2))*(1+(a8*rho_pr**2)-((a8*rho_pr**2)**2))))
+​
+  c_pr_analytical = (1 / P_pr) - ((0.27 / (z**2 * T_pr)) * (do / (1 + ((rho_pr / z) * do))))
+  cgas_analytical = c_pr_analytical / P_pc
+  return(cgas_analytical) 
+
+#viscosity#
+def gas_mu(temp, rhogas, sg,x_h2s):
+  """
+  Calculate Gas Viscosity 
+  For gas with CO2 and N2 composition
+  For range: 100 < temp (°F) < 340; 0.9 < x_CO2 (mol%) < 3.2; x_N2 (mol%) < 4.8 (std 2.7-9.0%) usage when X_h2S=0
+  (Lee et al, 1996)
+  
+  When X-h2s is there meaning sour well  Using Standing correlation for viscosity (1977)
+  """
+  if x_h2s==0:
+  
+   import numpy as np
+
+   if temp > 100 and temp < 340:
+    temp = temp + 459.67
+    Mg = 28.97 * sg
+    rhogas_lee = rhogas * 0.0160185 # lbm/ft3 converted to gas density unit of Lee et al (g/cm3)#
+    K = ((0.00094 + (2E-06*Mg)*(temp**1.5))) / (209 + 19*Mg + temp)
+    x = 3.5 + (986 / temp) + (0.01 * Mg)
+    y = 2.4 - 0.2*x  
+    viscogas = K * np.exp(x * (rhogas_lee**y))
+  
+   else:
+    viscogas = np.nan
+  else:
+    import math
+    temp = temp + 459.67
+    vis_uncorrected=(1.709*((10**-5)-(2.062*(10**-6)*sg))*(temp-460))+0.008118-(0.00615*math.log10(sg))
+    vis_co2=x_co2*((0.00908*math.log10(sg))+0.00624)
+    vis_x_h2s=x_h2s*((0.00849*math.log10(sg))+0.00373) 
+    viscogas=vis_uncorrected+vis_co2+vis_x_h2s
+  return viscogas
+
+#gas density#
+def gas_density(temp, pressure, sg, z):
+  """
+  Calculate Gas Density
+  For range: this is not a correlation, so valid for infinite intervals
+  """  
+  temp = temp + 459.67
+  R = 10.732 # gas constant in (ft3*psi)/(lb-mol*R) 
+  rhogas = (28.97 * sg * pressure) / (z * R * temp)
+  return rhogas  
+
+#Gas Bg#
+def gas_fvf(z, temp, pressure):
+  """
+  Calculate Gas FVF
+  For range: this is not a correlation, so valid for infinite intervals
+  """
+  temp = temp + 459.67
+  Bg = 0.0282793 * z * temp / pressure 
+  return(Bg)
