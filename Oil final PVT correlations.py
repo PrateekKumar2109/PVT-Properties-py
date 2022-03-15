@@ -123,6 +123,7 @@ def oil_formation_volume_factor(o_api,temp,Pb_pressure,sg,press_sep,temp_sep,Rs,
     #Second Vasquez-Beggs Correlation#
     sg_ref_sep=[]
     Bo_beggs=[]
+    Bo_undersaturated_beggs=[]
     
     for i in range(len(o_api)):
      sg_ref_sep1=(sg[i])*(1+(0.00005912*(o_api[i])*((temp_sep[i])-460)*np.log10((press_sep[i])/114.7)))
@@ -138,8 +139,8 @@ def oil_formation_volume_factor(o_api,temp,Pb_pressure,sg,press_sep,temp_sep,Rs,
       
      else: 
          a_b=(10**-5)*(-1433+(5*Rs[i])+(17.2*((temp[i])-460))-(1180*sg_ref_sep1)+(12.61*o_api[i]))
-         Bo_undersaturated_beggs=Bob*(np.exp(-a_b*(np.log(res_press[i]/pressure[i]))))
-     
+         bo_undersaturated_beggs=Bob*(np.exp(-a_b*(np.log(res_press[i]/pressure[i]))))
+         Bo_undersaturated_beggs.append(bo_undersaturated_beggs)
      sg_ref_sep.append(sg_ref_sep1)
      
     #Third Glaso Correlation#
